@@ -8,6 +8,7 @@ contract PandaswapQuoter {
     struct QuoteParams {
         address pool;
         uint256 amountIn;
+        uint160 sqrtPriceLimitX96;
         bool zeroForOne;
     }
 
@@ -22,6 +23,7 @@ contract PandaswapQuoter {
                 address(this),
                 params.zeroForOne,
                 params.amountIn,
+                params.sqrtPriceLimitX96,
                 abi.encode(params.pool)
             )
         {} catch (bytes memory reason) {

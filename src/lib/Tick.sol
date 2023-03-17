@@ -1,12 +1,14 @@
 //SPDX-License-Identifier:MIT
 
+import "./LiquidityMath.sol";
+
 pragma solidity ^0.8.0;
 
 library Tick {
     struct Info {
         bool initialized;
         // total liquidity at tick
-        uint128 liquidity;
+        uint128 liquidityGross;
         // amount of liquidity added or subtraced when tick is crossed
         int128 liquidityNet;
     }
@@ -18,18 +20,19 @@ library Tick {
         bool upper
     ) internal returns (bool flipped) {
         Info storage tickInfo = self[tick];
-        uint128 liquidityBefore = tickInfo.liquidity;
+        uint128 liquidityBefore = tickInfo.liquidityGross;
+        uint128 liquidityAfter = LiquidityMath.addLiquidity(
+            liquidityBefore,
+            liquidityDelta
+        );
+        tickInfo.liquidityGross = liquidityAfter;
+        tickInfo.liquidityNet = upper
+            ? (tickInfo.liquidityNet - liquidityDelta)
+            : (tickInfo.liquidityNet + liquidityDelta);
         if (liquidityBefore == 0) {
             tickInfo.initialized = true;
         }
-        tickInfo.liquidityNet = upper
-            ? tickInfo.liquidityNet - liquidityDelta
-            : tickInfo.liquidityNet + liquidityDelta;
-        uint128 liquidityAfter = upper
-            ? liquidityBefore - uint128(liquidityDelta)
-            : liquidityBefore + uint128(liquidityDelta);
         flipped = (liquidityAfter == 0) != (liquidityBefore == 0);
-        tickInfo.liquidity = liquidityAfter;
     }
 
     function cross(

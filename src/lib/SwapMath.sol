@@ -13,24 +13,28 @@ library SwapMath {
     )
         internal
         pure
-        returns (
-            uint160 sqrtPriceNextX96,
-            uint256 amountIn,
-            uint256 amountOut
-        )
+        returns (uint160 sqrtPriceNextX96, uint256 amountIn, uint256 amountOut)
     {
         bool zeroForOne = sqrtPriceCurrentX96 >= sqrtPriceTargetX96;
-        amountIn = zeroForOne 
-        ? Math.calcAmount0Delta(sqrtPriceCurrentX96, sqrtPriceTargetX96, liquidity) 
-        : Math.calcAmount1Delta(sqrtPriceCurrentX96, sqrtPriceTargetX96, liquidity);
-        if (amountRemaining?=amountIn) sqrtPriceNextX96 = sqrtPriceTargetX96;
-        else 
-        sqrtPriceNextX96 = Math.getNextSqrtPriceFromInput(
-            sqrtPriceCurrentX96,
-            liquidity,
-            amountRemaining,
-            zeroForOne
-        );
+        amountIn = zeroForOne
+            ? Math.calcAmount0Delta(
+                sqrtPriceCurrentX96,
+                sqrtPriceTargetX96,
+                liquidity
+            )
+            : Math.calcAmount1Delta(
+                sqrtPriceCurrentX96,
+                sqrtPriceTargetX96,
+                liquidity
+            );
+        if (amountRemaining >= amountIn) sqrtPriceNextX96 = sqrtPriceTargetX96;
+        else
+            sqrtPriceNextX96 = Math.getNextSqrtPriceFromInput(
+                sqrtPriceCurrentX96,
+                liquidity,
+                amountRemaining,
+                zeroForOne
+            );
         amountIn = Math.calcAmount0Delta(
             sqrtPriceCurrentX96,
             sqrtPriceNextX96,

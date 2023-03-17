@@ -3,15 +3,18 @@ pragma solidity ^0.8.13;
 
 import "./lib/Tick.sol";
 import "./lib/Position.sol";
-import './lib/TickBitmap.sol';
+import "./lib/TickBitmap.sol";
 import "./interfaces/IPandaswapMintCallback.sol";
 import "./interfaces/IPandaswapSwapCallback.sol";
 import "./interfaces/IERC20.sol";
 import "./lib/Math.sol";
 import "./lib/TickMath.sol";
-import './lib/SwapMath.sol';
+import "./lib/SwapMath.sol";
+import "./lib/LiquidityMath.sol";
+import "forge-std/Test.sol";
+import "./interfaces/IPandaswapFlashCallback.sol";
 
-contract PandaswapPool {
+contract PandaswapPool is Test {
     using Tick for mapping(int24 => Tick.Info);
     using Position for mapping(bytes32 => Position.Info);
     using Position for Position.Info;
@@ -42,6 +45,7 @@ contract PandaswapPool {
         uint256 amountCalculated;
         uint160 sqrtPriceX96;
         int24 tick;
+        uint128 liquidity;
     }
     struct StepState {
         uint160 sqrtPriceStartX96;
@@ -79,11 +83,13 @@ contract PandaswapPool {
         uint128 liquidity,
         int24 tick
     );
+    event Flash(address sender, uint256 amount0, uint256 amount1);
 
     error InvalidTickRange();
     error ZeroLiquidity();
     error InsufficientInputAmount();
     error NotEnoughLiquidity();
+    error InvalidPriceLimit();
 
     constructor(
         address _token0,
@@ -114,15 +120,9 @@ contract PandaswapPool {
             upperTick > MAX_TICK
         ) revert InvalidTickRange();
         if (amount == 0) revert ZeroLiquidity();
-        Slot memory _slot= slot0;
-        //Price range is above current price
-        if(_slot0.tick<lowerTick){
-            amount0=Math.calcAmount0Delta(TickMath.getSqrtRatioAtTick(lowerTick),TickMath.getSqrtRatioAtTick(upperTick),amount);
-        }
-        //Price range includes current price
-        else if (_slot0<upperTick){
-        bool flippedLower = ticks.update(lowerTick, amount);
-        bool flippedUpper = ticks.update(upperTick, amount);
+        // Update user ticks, tickBitmap, and position
+        bool flippedLower = ticks.update(lowerTick, int128(amount), false);
+        bool flippedUpper = ticks.update(upperTick, int128(amount), true);
         if (flippedLower) {
             tickBitmap.flipTick(lowerTick, 1);
         }
@@ -135,25 +135,37 @@ contract PandaswapPool {
             upperTick
         );
         position.update(amount);
+        //Get current slot0
         Slot0 memory _slot0 = slot0;
-        amount0 = Math.calcAmount0Delta(
-            _slot0.sqrtPriceX96,
-            TickMath.getSqrtRatioAtTick(upperTick),
-            amount
-        );
-        amount1 = Math.calcAmount1Delta(
-            _slot0.sqrtPriceX96,
-            TickMath.getSqrtRatioAtTick(lowerTick),
-            amount
-        );
-        liquidity += uint128(amount);}
+        //Price range is above current price
+        if (_slot0.tick < lowerTick) {
+            amount0 = Math.calcAmount0Delta(
+                TickMath.getSqrtRatioAtTick(lowerTick),
+                TickMath.getSqrtRatioAtTick(upperTick),
+                amount
+            );
+        }
+        //Price range includes current price
+        else if (_slot0.tick < upperTick) {
+            amount0 = Math.calcAmount0Delta(
+                _slot0.sqrtPriceX96,
+                TickMath.getSqrtRatioAtTick(upperTick),
+                amount
+            );
+            amount1 = Math.calcAmount1Delta(
+                _slot0.sqrtPriceX96,
+                TickMath.getSqrtRatioAtTick(lowerTick),
+                amount
+            );
+            liquidity += uint128(amount);
+        }
         //Price range is below current price
         else {
-        amount1=Math.calcAmount1Delta(
-            TickMath.getSqrtRatioAtTick(lowerTick),
-            TickMath.getSqrtRatioAtTick(upperTick),
-            amount
-        );
+            amount1 = Math.calcAmount1Delta(
+                TickMath.getSqrtRatioAtTick(lowerTick),
+                TickMath.getSqrtRatioAtTick(upperTick),
+                amount
+            );
         }
         uint256 balance0Before;
         uint256 balance1Before;
@@ -187,22 +199,51 @@ contract PandaswapPool {
         balance = IERC20(token1).balanceOf(address(this));
     }
 
+    function flash(
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata data
+    ) public {
+        uint256 balance0Before = IERC20(token0).balanceOf(address(this));
+        uint256 balance1Before = IERC20(token1).balanceOf(address(this));
+        if (amount0 > 0) IERC20(token0).transfer(msg.sender, amount0);
+        if (amount1 > 0) IERC20(token1).transfer(msg.sender, amount1);
+        IPandaswapFlashCallback(msg.sender).pandaswapFlashCallback(data);
+        require(IERC20(token0).balanceOf(address(this)) >= balance0Before);
+        require(IERC20(token1).balanceOf(address(this)) >= balance1Before);
+        emit Flash(msg.sender, amount0, amount1);
+    }
+
     function swap(
         address recipient,
         bool zeroForOne,
         uint256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
         bytes calldata data
     ) public returns (int256 amount0, int256 amount1) {
         Slot0 memory _slot0 = slot0;
         uint128 _liquidity = liquidity;
+        if (
+            zeroForOne
+                ? sqrtPriceLimitX96 > _slot0.sqrtPriceX96 ||
+                    sqrtPriceLimitX96 < TickMath.MIN_SQRT_RATIO
+                : sqrtPriceLimitX96 < _slot0.sqrtPriceX96 ||
+                    sqrtPriceLimitX96 > TickMath.MAX_SQRT_RATIO
+        ) revert InvalidPriceLimit();
         SwapState memory state = SwapState({
             amountSpecifiedRemaining: amountSpecified,
             amountCalculated: 0,
             sqrtPriceX96: _slot0.sqrtPriceX96,
             tick: _slot0.tick,
-            liquidity: _liquidity
+            liquidity: liquidity
         });
-        while (state.amountSpecifiedRemaining > 0) {
+        console.log("current tick", uint24(_slot0.tick));
+        console.log("looping swap..."); //for testing purpose
+        console.log("current liquidity", _liquidity);
+        while (
+            state.amountSpecifiedRemaining > 0 &&
+            state.sqrtPriceX96 != sqrtPriceLimitX96
+        ) {
             StepState memory step;
             (step.nextTick, ) = tickBitmap.nextInitializedTickWithinOneWord(
                 state.tick,
@@ -213,50 +254,77 @@ contract PandaswapPool {
             (state.sqrtPriceX96, step.amountIn, step.amountOut) = SwapMath
                 .computeSwapStep(
                     state.sqrtPriceX96,
-                    step.sqrtPriceNextX96,
+                    (
+                        zeroForOne
+                            ? step.sqrtPriceNextX96 < sqrtPriceLimitX96
+                            : step.sqrtPriceNextX96 > sqrtPriceLimitX96
+                    )
+                        ? sqrtPriceLimitX96
+                        : step.sqrtPriceNextX96,
                     liquidity,
                     state.amountSpecifiedRemaining
                 );
+            console.log("step nextTick:", uint24(step.nextTick));
+            console.log("step amountIn:", step.amountIn);
             state.amountSpecifiedRemaining -= step.amountIn;
+            console.log(
+                "amountSpecifiedRemaining:",
+                state.amountSpecifiedRemaining
+            );
             state.amountCalculated += step.amountOut;
-            if (state.sqrtPriceX96=step.sqrtPriceNextX96) {
-                int128 liquidityDelta=tick.cross(step.nextTick);
-                if (zeroForOne) liquidityDelta=-liquidityDelta;
-                state.liquidity= liquidityMath.addLiquidity(
+            console.log("amountCalculated:", state.amountCalculated);
+            if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+                int128 liquidityDelta = ticks.cross(step.nextTick);
+                if (liquidityDelta < 0) {
+                    console.log("liquidity Delta: -", uint128(-liquidityDelta));
+                }
+
+                if (zeroForOne) liquidityDelta = -liquidityDelta;
+                state.liquidity = LiquidityMath.addLiquidity(
                     state.liquidity,
                     liquidityDelta
                 );
-                if (state.liquidity==0) revert NotEnoughLiquidity(); // This check is not implemented in UniswapV3pool.sol
-                state.tick=zeroForOne ? step.nextTick-1 : step.nextTick;          
-            } else{
-            state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96); }
+                console.log("liquidity updated to:", state.liquidity);
+                if (state.liquidity == 0) revert NotEnoughLiquidity(); // This check is not implemented in UniswapV3pool.sol
+                state.tick = zeroForOne ? step.nextTick - 1 : step.nextTick;
+            } else {
+                state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+            }
         }
-        if (_liquidity != state.liquidity) liquidity=state.liquidity;
+        if (_liquidity != state.liquidity) liquidity = state.liquidity;
         if (state.tick != _slot0.tick) {
             (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
         }
-        (amount0,amount1)=zeroForOne
-        ?(int256(amountSpecified-state.amountSpecifiedRemaining),-int256(state.amountCalculated))
-        :(-int256(state.amountCalculated),int256(amountSpecified-state.amountSpecifiedRemaining));
-        if(zeroForOne){
-        IERC20(token1).transfer(recipient, uint256(state.amountCalculated));
-        uint256 balance0before = balance0();
-        IPandaswapSwapCallback(msg.sender).pandaswapSwapCallback(
-            amount0,
-            amount1,
-            data
-        );
-        if (balance0before + uint256(amount0) < balance1()) revert InsufficientInputAmount();
-        }else{
-                IERC20(token0).transfer(recipient, uint256(-amount0));
-                uint256 balance1Before=balance1();
-                IPandaswapSwapCallback(msg.sender).pandaswapSwapCallback(
-                    amount0,
-                    amount1,
-                    data
-                );
-                if(balance1Before+uint256(amount1)>balance1())revert InsufficientInputAmount();
-            }
+        (amount0, amount1) = zeroForOne
+            ? (
+                int256(amountSpecified - state.amountSpecifiedRemaining),
+                -int256(state.amountCalculated)
+            )
+            : (
+                -int256(state.amountCalculated),
+                int256(amountSpecified - state.amountSpecifiedRemaining)
+            );
+        if (zeroForOne) {
+            IERC20(token1).transfer(recipient, uint256(state.amountCalculated));
+            uint256 balance0before = balance0();
+            IPandaswapSwapCallback(msg.sender).pandaswapSwapCallback(
+                amount0,
+                amount1,
+                data
+            );
+            if (balance0before + uint256(amount0) < balance0())
+                revert InsufficientInputAmount();
+        } else {
+            IERC20(token0).transfer(recipient, uint256(-amount0));
+            uint256 balance1Before = balance1();
+            IPandaswapSwapCallback(msg.sender).pandaswapSwapCallback(
+                amount0,
+                amount1,
+                data
+            );
+            if (balance1Before + uint256(amount1) > balance1())
+                revert InsufficientInputAmount();
+        }
 
         emit Swap(
             msg.sender,
