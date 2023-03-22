@@ -13,6 +13,7 @@ import "./lib/SwapMath.sol";
 import "./lib/LiquidityMath.sol";
 import "forge-std/Test.sol";
 import "./interfaces/IPandaswapFlashCallback.sol";
+import "./interfaces/IPandaswapPoolDeployer.sol";
 
 contract PandaswapPool is Test {
     using Tick for mapping(int24 => Tick.Info);
@@ -24,8 +25,10 @@ contract PandaswapPool is Test {
     int24 internal constant MAX_TICK = -MIN_TICK;
 
     //Pool tokens, immutable
+    address public immutable factory;
     address public immutable token0;
     address public immutable token1;
+    uint24 public immutable tickSpacing;
 
     //Packing variables that are read together
     struct Slot0 {
@@ -35,11 +38,7 @@ contract PandaswapPool is Test {
         int24 tick;
     }
     Slot0 public slot0;
-    struct CallbackData {
-        address token0;
-        address token1;
-        address payer;
-    }
+
     struct SwapState {
         uint256 amountSpecifiedRemaining;
         uint256 amountCalculated;
@@ -90,17 +89,18 @@ contract PandaswapPool is Test {
     error InsufficientInputAmount();
     error NotEnoughLiquidity();
     error InvalidPriceLimit();
+    error AlreadyInitialized();
 
-    constructor(
-        address _token0,
-        address _token1,
-        uint160 _sqrtPriceX96,
-        int24 _tick
-    ) {
-        token0 = _token0;
-        token1 = _token1;
+    constructor() {
+        (factory, token0, token1, tickSpacing) = IPandaswapPoolDeployer(
+            msg.sender
+        ).parameters();
+    }
 
-        slot0 = Slot0({sqrtPriceX96: _sqrtPriceX96, tick: _tick});
+    function initialize(uint160 sqrtPriceX96) public {
+        if (slot0.sqrtPriceX96 != 0) revert AlreadyInitialized();
+        int24 tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+        slot0 = Slot0({sqrtPriceX96: sqrtPriceX96, tick: tick});
     }
 
     /// @notice Adds liquidity for the given owner/lowerTick/upperTick/amount of liquidity

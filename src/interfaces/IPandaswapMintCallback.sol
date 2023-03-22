@@ -3,7 +3,7 @@
 pragma solidity ^0.8.0;
 
 /// @title Callback for PandaswapPool.sol #mint
-/// @notice Any contract that calls IPandaswapMintCallback#mint must implement this interface
+/// @notice Any contract that calls IPandaswapPool#mint must implement this interface
 
 interface IPandaswapMintCallback {
     function pandaswapMintCallback(

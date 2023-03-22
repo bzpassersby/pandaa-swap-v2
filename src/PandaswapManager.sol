@@ -5,10 +5,20 @@ pragma solidity ^0.8.0;
 import "./PandaswapPool.sol";
 import "./lib/TickMath.sol";
 import "./lib/LiquidityMath.sol";
+import "./lib/PoolAddress.sol";
+import "./interfaces/IPandaswapManager.sol";
+import "./lib/Path.sol";
 
-contract PandaswapManager {
+contract PandaswapManager is IPandaswapManager {
+    using Path for bytes;
+    error TooLittleReceived(uint256 amountOut);
+
+    address public immutable factory;
+
     struct MintParams {
-        address poolAddress;
+        address tokenA;
+        address tokenB;
+        uint24 tickSpacing;
         int24 lowerTick;
         int24 upperTick;
         uint256 amount0Desired;
@@ -16,13 +26,36 @@ contract PandaswapManager {
         uint256 amount0Min;
         uint256 amount1Min;
     }
+    struct SwapSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24 tickSpacing;
+        uint256 amountIn;
+        uint160 sqrtPriceLimitX96;
+    }
+    struct SwapParams {
+        bytes path;
+        address recipient;
+        uint256 amountIn;
+        uint256 minAmountOut;
+    }
 
     error SlippageCheckFailed(uint256 amount0, uint256 amount1);
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
 
     function mint(
         MintParams memory params
     ) public returns (uint256 amount0, uint256 amount1) {
-        PandaswapPool pool = PandaswapPool(params.poolAddress);
+        address poolAddress = PoolAddress.computeAddress(
+            factory,
+            params.tokenA,
+            params.tokenB,
+            params.tickSpacing
+        );
+        PandaswapPool pool = PandaswapPool(poolAddress);
         (uint160 sqrtPriceX96, ) = pool.slot0();
         uint160 sqrtPriceLowerX96 = TickMath.getSqrtRatioAtTick(
             params.lowerTick
@@ -38,13 +71,13 @@ contract PandaswapManager {
             params.amount1Desired
         );
 
-        (amount0, amount1) = PandaswapPool(params.poolAddress).mint(
+        (amount0, amount1) = pool.mint(
             msg.sender,
             params.lowerTick,
             params.upperTick,
             liquidity,
             abi.encode(
-                PandaswapPool.CallbackData({
+                CallbackData({
                     token0: pool.token0(),
                     token1: pool.token1(),
                     payer: msg.sender
@@ -71,27 +104,109 @@ contract PandaswapManager {
         );
     }
 
+    function getPool(
+        address token0,
+        address token1,
+        uint24 tickSpacing
+    ) internal view returns (PandaswapPool pool) {
+        (token0, token1) = token0 > token1
+            ? (token1, token0)
+            : (token0, token1);
+        pool = PandaswapPool(
+            PoolAddress.computeAddress(factory, token0, token1, tickSpacing)
+        );
+    }
+
+    function swap(SwapParams memory params) public returns (uint256 amountOut) {
+        address payer = msg.sender;
+        bool hasMultiplePools;
+        while (true) {
+            hasMultiplePools = params.path.hasMultiplePools();
+            params.amountIn = _swap(
+                params.amountIn,
+                hasMultiplePools ? address(this) : params.recipient,
+                0,
+                SwapCallbackData({
+                    path: params.path.getFirstPool(),
+                    payer: payer
+                })
+            );
+            if (hasMultiplePools) {
+                payer = address(this);
+                params.path = params.path.skipToken();
+            } else {
+                amountOut = params.amountIn;
+                break;
+            }
+        }
+        if (amountOut < params.minAmountOut)
+            revert TooLittleReceived(amountOut);
+    }
+
+    function swapSingle(
+        SwapSingleParams calldata params
+    ) public returns (uint256 amountOut) {
+        amountOut = _swap(
+            params.amountIn,
+            msg.sender,
+            params.sqrtPriceLimitX96,
+            SwapCallbackData({
+                path: abi.encodePacked(
+                    params.tokenIn,
+                    params.tickSpacing,
+                    params.tokenOut
+                ),
+                payer: msg.sender
+            })
+        );
+    }
+
+    function _swap(
+        uint256 amountIn,
+        address recipient,
+        uint160 sqrtPriceLimitX96,
+        SwapCallbackData memory data
+    ) internal returns (uint256 amountOut) {
+        (address tokenIn, address tokenOut, uint24 tickSpacing) = data
+            .path
+            .decodeFirstPool();
+        bool zeroForOne = tokenIn < tokenOut;
+        (int256 amount0, int256 amount1) = getPool(
+            tokenIn,
+            tokenOut,
+            tickSpacing
+        ).swap(
+                recipient,
+                zeroForOne,
+                amountIn,
+                sqrtPriceLimitX96 == 0
+                    ? (
+                        zeroForOne
+                            ? TickMath.MIN_SQRT_RATIO + 1
+                            : TickMath.MAX_SQRT_RATIO - 1
+                    )
+                    : sqrtPriceLimitX96,
+                abi.encode(data)
+            );
+        amountOut = uint256(-(zeroForOne ? amount1 : amount0));
+    }
+
     function pandaswapSwapCallback(
         int256 amount0,
         int256 amount1,
-        bytes calldata data
+        bytes calldata _data
     ) public {
-        PandaswapPool.CallbackData memory extra = abi.decode(
-            data,
-            (PandaswapPool.CallbackData)
-        );
-        if (amount0 > 0) {
-            IERC20(extra.token0).transferFrom(
-                extra.payer,
+        SwapCallbackData memory data = abi.decode(_data, (SwapCallbackData));
+        (address tokenIn, address tokenOut, ) = data.path.decodeFirstPool();
+        bool zeroForOne = tokenIn < tokenOut;
+        int256 amount = zeroForOne ? amount0 : amount1;
+        if (data.payer == address(this)) {
+            IERC20(tokenIn).transfer(msg.sender, uint256(amount));
+        } else {
+            IERC20(tokenIn).transferFrom(
+                data.payer,
                 msg.sender,
-                uint256(amount0)
-            );
-        }
-        if (amount1 > 0) {
-            IERC20(extra.token1).transferFrom(
-                extra.payer,
-                msg.sender,
-                uint256(amount1)
+                uint256(amount)
             );
         }
     }
@@ -101,10 +216,7 @@ contract PandaswapManager {
         uint256 amount1,
         bytes calldata data
     ) public {
-        PandaswapPool.CallbackData memory extra = abi.decode(
-            data,
-            (PandaswapPool.CallbackData)
-        );
+        CallbackData memory extra = abi.decode(data, (CallbackData));
         IERC20(extra.token0).transferFrom(extra.payer, msg.sender, amount0);
         IERC20(extra.token1).transferFrom(extra.payer, msg.sender, amount1);
     }

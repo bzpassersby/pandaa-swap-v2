@@ -8,6 +8,8 @@ import "../src/lib/TickMath.sol";
 import "forge-std/Test.sol";
 import "../src/PandaswapPool.sol";
 import "./ERC20Mintable.sol";
+import "../src/interfaces/IPandaswapManager.sol";
+import "../src/PandaswapManager.sol";
 
 abstract contract TestUtils is Test {
     struct ExpectedStateAfterMint {
@@ -48,6 +50,11 @@ abstract contract TestUtils is Test {
         );
     }
 
+    function tick60(uint256 price) internal pure returns (int24 _tick) {
+        _tick = tick(price);
+        _tick = nearestUsableTick(_tick, 60);
+    }
+
     function sqrtP(uint256 price) internal pure returns (uint160 _sqrtPrice) {
         _sqrtPrice = uint160(
             int160(
@@ -55,6 +62,10 @@ abstract contract TestUtils is Test {
                     (FixedPoint96.RESOLUTION - 64)
             )
         );
+    }
+
+    function sqrtP60FromTick(int24 _tick) internal pure returns (uint160) {
+        return TickMath.getSqrtRatioAtTick(nearestUsableTick(_tick, 60));
     }
 
     function tickInBitMap(
@@ -156,6 +167,60 @@ abstract contract TestUtils is Test {
         );
     }
 
+    function divRound(
+        int128 x,
+        int128 y
+    ) internal pure returns (int128 result) {
+        int128 quot = ABDKMath64x64.div(x, y);
+        result = quot >> 64;
+        // Check if remainder is greater than 0.5
+        if (x >= 0) {
+            if (quot % 2 ** 64 >= 0x8000000000000000) {
+                result += 1;
+            }
+        } else {
+            if (quot % 2 ** 64 >= 0x8000000000000000) {
+                result -= 1;
+            }
+        }
+    }
+
+    function nearestUsableTick(
+        int24 _tick,
+        uint24 tickSpacing
+    ) internal pure returns (int24 result) {
+        result =
+            int24(divRound(int128(_tick), int128(int24(tickSpacing)))) *
+            int24(tickSpacing);
+
+        if (result < TickMath.MIN_TICK) {
+            result += int24(tickSpacing);
+        } else if (result > TickMath.MAX_TICK) {
+            result -= int24(tickSpacing);
+        }
+    }
+
+    function mintParams60(
+        address tokenA,
+        address tokenB,
+        uint256 lowerPrice,
+        uint256 upperPrice,
+        uint256 amount0,
+        uint256 amount1
+    ) internal pure returns (PandaswapManager.MintParams memory params) {
+        params = PandaswapManager.MintParams({
+            tokenA: tokenA,
+            tokenB: tokenB,
+            tickSpacing: 60,
+            lowerTick: tick60(lowerPrice),
+            upperTick: tick60(upperPrice),
+            amount0Desired: amount0,
+            amount1Desired: amount1,
+            amount0Min: 0,
+            amount1Min: 0
+        });
+    }
+
     function encodeError(
         string memory error
     ) internal pure returns (bytes memory encoded) {
@@ -165,14 +230,14 @@ abstract contract TestUtils is Test {
     function encodeExtra(
         address _token0,
         address _token1,
-        address _prayer
+        address _payer
     ) internal pure returns (bytes memory) {
         return
             abi.encode(
-                PandaswapPool.CallbackData({
+                IPandaswapManager.CallbackData({
                     token0: _token0,
                     token1: _token1,
-                    payer: _prayer
+                    payer: _payer
                 })
             );
     }

@@ -7,13 +7,25 @@ import "./TestUtils.sol";
 import "../src/PandaswapPool.sol";
 import "./ERC20Mintable.sol";
 import "./PandaswapPool.Utils.sol";
+import "../src/interfaces/IPandaswapManager.sol";
+import "../src/lib/Path.sol";
+import "../src/interfaces/IPandaswapPoolDeployer.sol";
 
-contract PandaswapPoolSwapsTest is Test, TestUtils, PandaswapPoolUtils {
+contract PandaswapPoolSwapsTest is
+    Test,
+    TestUtils,
+    PandaswapPoolUtils,
+    IPandaswapPoolDeployer,
+    IPandaswapManager
+{
+    using Path for bytes;
     ERC20Mintable token0;
     ERC20Mintable token1;
     PandaswapPool pool;
+    PoolParameters public parameters;
     bytes extra;
     bool transferInMintCallback = true;
+    bool transferInSwapCallback = true;
 
     function setUp() public {
         token0 = new ERC20Mintable("Ether", "ETH", 18);
@@ -550,12 +562,14 @@ contract PandaswapPoolSwapsTest is Test, TestUtils, PandaswapPoolUtils {
     ) internal returns (uint256 poolBalance0, uint256 poolBalance1) {
         token0.mint(address(this), params.wethBalance + 5 ether);
         token1.mint(address(this), params.usdcBalance + 5 ether);
-        pool = new PandaswapPool(
-            address(token0),
-            address(token1),
-            sqrtP(params.currentPrice),
-            tick(params.currentPrice)
-        );
+        parameters = PoolParameters({
+            factory: address(this),
+            token0: address(token0),
+            token1: address(token1),
+            tickSpacing: 1
+        });
+        pool = new PandaswapPool();
+        pool.initialize(sqrtP(5000));
         //set up callback params
 
         uint256 poolBalance0Tmp;
@@ -563,6 +577,7 @@ contract PandaswapPoolSwapsTest is Test, TestUtils, PandaswapPoolUtils {
 
         if (params.mintLiquidity) {
             console.log("minting position...");
+            transferInMintCallback = params.transferInMintCallback;
             token0.approve(address(this), params.wethBalance + 5 ether);
             token1.approve(address(this), params.usdcBalance + 5 ether);
             for (uint256 i = 0; i < params.liquidity.length; i++) {
@@ -577,6 +592,7 @@ contract PandaswapPoolSwapsTest is Test, TestUtils, PandaswapPoolUtils {
                 poolBalance1 += poolBalance1Tmp;
             }
         }
+        transferInSwapCallback = params.transferInSwapCallback;
     }
 
     // //---------------------------------------------------------------------------
@@ -586,23 +602,22 @@ contract PandaswapPoolSwapsTest is Test, TestUtils, PandaswapPoolUtils {
         int256 amount1,
         bytes calldata data
     ) public {
-        PandaswapPool.CallbackData memory _extra = abi.decode(
-            data,
-            (PandaswapPool.CallbackData)
-        );
-        if (amount0 > 0) {
-            IERC20(_extra.token0).transferFrom(
-                _extra.payer,
-                msg.sender,
-                uint256(amount0)
-            );
-        }
-        if (amount1 > 0) {
-            IERC20(_extra.token1).transferFrom(
-                _extra.payer,
-                msg.sender,
-                uint256(amount1)
-            );
+        if (transferInSwapCallback) {
+            CallbackData memory _data = abi.decode(data, (CallbackData));
+            if (amount0 > 0) {
+                IERC20(_data.token0).transferFrom(
+                    _data.payer,
+                    msg.sender,
+                    uint256(amount0)
+                );
+            }
+            if (amount1 > 0) {
+                IERC20(_data.token1).transferFrom(
+                    _data.payer,
+                    msg.sender,
+                    uint256(amount1)
+                );
+            }
         }
     }
 
@@ -612,10 +627,7 @@ contract PandaswapPoolSwapsTest is Test, TestUtils, PandaswapPoolUtils {
         bytes calldata data
     ) public {
         if (transferInMintCallback) {
-            PandaswapPool.CallbackData memory _extra = abi.decode(
-                data,
-                (PandaswapPool.CallbackData)
-            );
+            CallbackData memory _extra = abi.decode(data, (CallbackData));
             IERC20(_extra.token0).transferFrom(
                 _extra.payer,
                 msg.sender,

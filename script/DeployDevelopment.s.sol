@@ -5,8 +5,11 @@ import "forge-std/Script.sol";
 import "../test/ERC20Mintable.sol";
 import "../src/PandaswapPool.sol";
 import "../src/PandaswapManager.sol";
+import "../src/interfaces/IPandaswapPoolDeployer.sol";
 
-contract DeployDevelopment is Script {
+contract DeployDevelopment is Script, IPandaswapPoolDeployer {
+    PoolParameters public parameters;
+
     function setUp() public {}
 
     function run() public {
@@ -17,13 +20,14 @@ contract DeployDevelopment is Script {
         vm.startBroadcast();
         ERC20Mintable token0 = new ERC20Mintable("Wrapped Ether", "WETH", 18);
         ERC20Mintable token1 = new ERC20Mintable("USD Coin", "USDC", 18);
-        PandaswapPool pool = new PandaswapPool(
-            address(token0),
-            address(token1),
-            currentSqrtP,
-            currentTick
-        );
-        PandaswapManager manager = new PandaswapManager();
+        parameters = PoolParameters({
+            factory: address(this),
+            token0: address(token0),
+            token1: address(token1),
+            tickSpacing: 1
+        });
+        PandaswapPool pool = new PandaswapPool();
+        PandaswapManager manager = new PandaswapManager(address(this));
         token0.mint(msg.sender, wethBalance);
         token1.mint(msg.sender, usdcBalance);
         vm.stopBroadcast();
