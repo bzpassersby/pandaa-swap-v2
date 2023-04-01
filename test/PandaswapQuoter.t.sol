@@ -31,11 +31,11 @@ contract PandaswapQuoterTest is Test, TestUtils {
         panda.mint(address(this), pandaBalance);
         //Deploy pool contracts: weth/usdc, weth/panda
         PandaswapPool poolUSDC = PandaswapPool(
-            factory.createPool(address(weth), address(usdc), 60)
+            factory.createPool(address(weth), address(usdc), 3000)
         );
         poolUSDC.initialize(sqrtP(5000));
         PandaswapPool poolPanda = PandaswapPool(
-            factory.createPool(address(weth), address(panda), 60)
+            factory.createPool(address(weth), address(panda), 3000)
         );
         poolPanda.initialize(sqrtP(10));
         weth.approve(address(manager), wethBalance);
@@ -71,18 +71,18 @@ contract PandaswapQuoterTest is Test, TestUtils {
                 PandaswapQuoter.QuoteSingleParams({
                     tokenIn: address(weth),
                     tokenOut: address(usdc),
-                    tickSpacing: 60,
+                    tickSpacing: 3000,
                     amountIn: 0.01337 ether,
                     sqrtPriceLimitX96: sqrtP(4993)
                 })
             );
-        assertEq(amountOut, 66.809153442256308009 ether, "invalid amountOut");
+        assertEq(amountOut, 66.608848079558229698 ether, "invalid amountOut");
         assertEq(
             sqrtPriceX96After,
-            5598854004958668990019104567840,
+            5598864267980327381293641469695,
             "invalid sqrtPriceX96After"
         );
-        assertEq(tickAfter, 85163, "invalid tickAfter");
+        assertEq(tickAfter, 85164, "invalid tickAfter");
     }
 
     function testQuoteUSDCforETH() public {
@@ -91,15 +91,15 @@ contract PandaswapQuoterTest is Test, TestUtils {
                 PandaswapQuoter.QuoteSingleParams({
                     tokenIn: address(usdc),
                     tokenOut: address(weth),
-                    tickSpacing: 60,
+                    tickSpacing: 3000,
                     amountIn: 42 ether,
                     sqrtPriceLimitX96: sqrtP(5005)
                 })
             );
-        assertEq(amountOut, 0.008396774627565324 ether, "invalid amountOut");
+        assertEq(amountOut, 0.008371593947078468 ether, "invalid amountOut");
         assertEq(
             sqrtPriceX96After,
-            5604429046402228950611610935846, // 5003.841941749589
+            5604422590555458105735383351329, // 5003.841941749589
             "invalid sqrtPriceX96After"
         );
         assertEq(tickAfter, 85183, "invalid tickAFter");
@@ -111,9 +111,9 @@ contract PandaswapQuoterTest is Test, TestUtils {
     function testQuotePandaforUSDCviaEth() public {
         bytes memory path = bytes.concat(
             bytes20(address(panda)),
-            bytes3(uint24(60)),
+            bytes3(uint24(3000)),
             bytes20(address(weth)),
-            bytes3(uint24(60)),
+            bytes3(uint24(3000)),
             bytes20(address(usdc))
         );
         (
@@ -121,18 +121,18 @@ contract PandaswapQuoterTest is Test, TestUtils {
             uint160[] memory sqrtPriceX96AfterList,
             int24[] memory tickAfterList
         ) = quoter.quote(path, 3 ether);
-        assertEq(amountOut, 1472.545906750265420689 ether, "invalid amountOut");
+        assertEq(amountOut, 1463.863228593034640093 ether, "invalid amountOut");
         assertEq(
             sqrtPriceX96AfterList[0],
-            251775459842086338964181233032,
+            251771757807685223741030010328,
             "invalid sqrtPriceX96After"
         );
         assertEq(
             sqrtPriceX96AfterList[1],
-            5526828440835641442318026170540,
+            5527273314166940201646773054671,
             "invalid sqrtPriceX96After"
         );
-        assertEq(tickAfterList[0], 23125, "invalid tickAFter");
-        assertEq(tickAfterList[1], 84904, "invalid tickAFter");
+        assertEq(tickAfterList[0], 23124, "invalid tickAFter");
+        assertEq(tickAfterList[1], 84906, "invalid tickAFter");
     }
 }

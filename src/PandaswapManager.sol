@@ -18,7 +18,7 @@ contract PandaswapManager is IPandaswapManager {
     struct MintParams {
         address tokenA;
         address tokenB;
-        uint24 tickSpacing;
+        uint24 fee;
         int24 lowerTick;
         int24 upperTick;
         uint256 amount0Desired;
@@ -29,7 +29,7 @@ contract PandaswapManager is IPandaswapManager {
     struct SwapSingleParams {
         address tokenIn;
         address tokenOut;
-        uint24 tickSpacing;
+        uint24 fee;
         uint256 amountIn;
         uint160 sqrtPriceLimitX96;
     }
@@ -53,10 +53,10 @@ contract PandaswapManager is IPandaswapManager {
             factory,
             params.tokenA,
             params.tokenB,
-            params.tickSpacing
+            params.fee
         );
         PandaswapPool pool = PandaswapPool(poolAddress);
-        (uint160 sqrtPriceX96, ) = pool.slot0();
+        (uint160 sqrtPriceX96, , , , ) = pool.slot0();
         uint160 sqrtPriceLowerX96 = TickMath.getSqrtRatioAtTick(
             params.lowerTick
         );
@@ -107,13 +107,13 @@ contract PandaswapManager is IPandaswapManager {
     function getPool(
         address token0,
         address token1,
-        uint24 tickSpacing
+        uint24 fee
     ) internal view returns (PandaswapPool pool) {
         (token0, token1) = token0 > token1
             ? (token1, token0)
             : (token0, token1);
         pool = PandaswapPool(
-            PoolAddress.computeAddress(factory, token0, token1, tickSpacing)
+            PoolAddress.computeAddress(factory, token0, token1, fee)
         );
     }
 
@@ -153,7 +153,7 @@ contract PandaswapManager is IPandaswapManager {
             SwapCallbackData({
                 path: abi.encodePacked(
                     params.tokenIn,
-                    params.tickSpacing,
+                    params.fee,
                     params.tokenOut
                 ),
                 payer: msg.sender
@@ -167,27 +167,23 @@ contract PandaswapManager is IPandaswapManager {
         uint160 sqrtPriceLimitX96,
         SwapCallbackData memory data
     ) internal returns (uint256 amountOut) {
-        (address tokenIn, address tokenOut, uint24 tickSpacing) = data
+        (address tokenIn, address tokenOut, uint24 fee) = data
             .path
             .decodeFirstPool();
         bool zeroForOne = tokenIn < tokenOut;
-        (int256 amount0, int256 amount1) = getPool(
-            tokenIn,
-            tokenOut,
-            tickSpacing
-        ).swap(
-                recipient,
-                zeroForOne,
-                amountIn,
-                sqrtPriceLimitX96 == 0
-                    ? (
-                        zeroForOne
-                            ? TickMath.MIN_SQRT_RATIO + 1
-                            : TickMath.MAX_SQRT_RATIO - 1
-                    )
-                    : sqrtPriceLimitX96,
-                abi.encode(data)
-            );
+        (int256 amount0, int256 amount1) = getPool(tokenIn, tokenOut, fee).swap(
+            recipient,
+            zeroForOne,
+            amountIn,
+            sqrtPriceLimitX96 == 0
+                ? (
+                    zeroForOne
+                        ? TickMath.MIN_SQRT_RATIO + 1
+                        : TickMath.MAX_SQRT_RATIO - 1
+                )
+                : sqrtPriceLimitX96,
+            abi.encode(data)
+        );
         amountOut = uint256(-(zeroForOne ? amount1 : amount0));
     }
 

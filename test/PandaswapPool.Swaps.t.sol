@@ -10,6 +10,7 @@ import "./PandaswapPool.Utils.sol";
 import "../src/interfaces/IPandaswapManager.sol";
 import "../src/lib/Path.sol";
 import "../src/interfaces/IPandaswapPoolDeployer.sol";
+import "../src/PandaswapFactory.sol";
 
 contract PandaswapPoolSwapsTest is
     Test,
@@ -22,14 +23,16 @@ contract PandaswapPoolSwapsTest is
     ERC20Mintable token0;
     ERC20Mintable token1;
     PandaswapPool pool;
+    PandaswapFactory factory;
     PoolParameters public parameters;
     bytes extra;
     bool transferInMintCallback = true;
     bool transferInSwapCallback = true;
 
     function setUp() public {
-        token0 = new ERC20Mintable("Ether", "ETH", 18);
-        token1 = new ERC20Mintable("USDC", "USDC", 18);
+        token1 = new ERC20Mintable("Ether", "ETH", 18);
+        token0 = new ERC20Mintable("USDC", "USDC", 18);
+        factory = new PandaswapFactory();
         extra = encodeExtra(address(token0), address(token1), address(this));
     }
 
@@ -77,8 +80,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 5604469350942327681608015466193,
-                tick: 85184,
+                sqrtPriceX96: 5604422590555458105735383351329,
+                tick: 85183,
                 currentLiquidity: liquidity[0].amount
             })
         );
@@ -135,7 +138,7 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 5603373224210470836738549114728,
+                sqrtPriceX96: 5603349844017036048802233057296,
                 tick: 85180,
                 currentLiquidity: liquidity[0].amount + liquidity[1].amount
             })
@@ -173,7 +176,7 @@ contract PandaswapPoolSwapsTest is
             address(this),
             false,
             swapAmount,
-            sqrtP(6110),
+            sqrtP(6210),
             extra
         );
         //check token1 input amount
@@ -187,8 +190,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 6124242207886635358281423749415,
-                tick: 86957,
+                sqrtPriceX96: 6113108782441498245750117063186,
+                tick: 86921,
                 currentLiquidity: liquidity[1].amount
             })
         );
@@ -239,8 +242,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 6124242207886635358281423749415,
-                tick: 86957,
+                sqrtPriceX96: 6113108782441498245750014589428,
+                tick: 86921,
                 currentLiquidity: liquidity[1].amount
             })
         );
@@ -335,8 +338,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 5598789932670288495990492698668,
-                tick: 85163,
+                sqrtPriceX96: 5598864267980327381293641469695,
+                tick: 85164,
                 currentLiquidity: liquidity[0].amount
             })
         );
@@ -400,8 +403,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 5600532972254808807501210282889,
-                tick: 85169,
+                sqrtPriceX96: 5600570162809008817738050929469,
+                tick: 85170,
                 currentLiquidity: liquidity[0].amount + liquidity[1].amount
             })
         );
@@ -451,8 +454,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 5124798727998704063534151449722,
-                tick: 83394,
+                sqrtPriceX96: 5134132205708668748264775407528,
+                tick: 83430,
                 currentLiquidity: liquidity[1].amount
             })
         );
@@ -502,8 +505,8 @@ contract PandaswapPoolSwapsTest is
                 userBalance1: uint256(userBalance1Before - amount1Delta),
                 poolBalance0: uint256(int256(poolBalance0) + amount0Delta),
                 poolBalance1: uint256(int256(poolBalance1) + amount1Delta),
-                sqrtPriceX96: 5124798727998704063752543051742,
-                tick: 83394,
+                sqrtPriceX96: 5266172344592743196167223309922,
+                tick: 83938,
                 currentLiquidity: liquidity[1].amount
             })
         );
@@ -554,8 +557,56 @@ contract PandaswapPoolSwapsTest is
         );
     }
 
+    function testObserve() public {
+        LiquidityRange[] memory liquidity = new LiquidityRange[](1);
+        liquidity[0] = liquidityRange(4545, 5500, 1 ether, 5000 ether, 5000);
+        TestCaseParams memory params = TestCaseParams({
+            wethBalance: 1 ether,
+            usdcBalance: 5000 ether,
+            currentPrice: 5000,
+            liquidity: liquidity,
+            transferInMintCallback: true,
+            transferInSwapCallback: true,
+            mintLiquidity: true
+        });
+        (uint256 poolBalance0, uint256 poolBalance1) = setupTestCase(params);
+        uint32[] memory secondsAgo;
+        pool.increaseObservationCardinalityNext(3);
+        uint256 swapAmount = 100 ether; //100 USDC
+        token1.mint(address(this), swapAmount * 10);
+        token1.approve(address(this), swapAmount * 10);
+
+        uint256 swapAmount2 = 1 ether; // 1WETH
+        token0.mint(address(this), swapAmount2 * 10);
+        token0.approve(address(this), swapAmount2 * 10);
+
+        vm.warp(2);
+        pool.swap(address(this), false, swapAmount, sqrtP(6000), extra);
+        vm.warp(7);
+        pool.swap(address(this), true, swapAmount2, sqrtP(4000), extra);
+        vm.warp(20);
+        pool.swap(address(this), false, swapAmount, sqrtP(6000), extra);
+
+        secondsAgo = new uint32[](4);
+        secondsAgo[0] = 0;
+        secondsAgo[1] = 13;
+        secondsAgo[2] = 17;
+        secondsAgo[3] = 18;
+        int56[] memory tickCumulatives = pool.observe(secondsAgo);
+        assertEq(tickCumulatives[0], 1607059);
+        assertEq(tickCumulatives[1], 511146);
+        assertEq(tickCumulatives[2], 170370);
+        assertEq(tickCumulatives[3], 85176);
+    }
+
     // //---------------------------------------------------------------------------
     // //============================== INTERNAL ===================================
+
+    function deployPool(
+        PoolParameters memory params
+    ) internal returns (address _pool) {
+        _pool = factory.createPool(params.token0, params.token1, params.fee);
+    }
 
     function setupTestCase(
         TestCaseParams memory params
@@ -563,12 +614,13 @@ contract PandaswapPoolSwapsTest is
         token0.mint(address(this), params.wethBalance + 5 ether);
         token1.mint(address(this), params.usdcBalance + 5 ether);
         parameters = PoolParameters({
-            factory: address(this),
+            factory: address(factory),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 60,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         pool.initialize(sqrtP(5000));
         //set up callback params
 

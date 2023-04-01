@@ -6,7 +6,7 @@ import "./TestUtils.sol";
 import "./ERC20Mintable.sol";
 import "../src/PandaswapFactory.sol";
 
-contract PandaswapFacotryTest is Test, TestUtils {
+contract PandaswapFactoryTest is Test, TestUtils {
     ERC20Mintable weth;
     ERC20Mintable usdc;
     PandaswapFactory factory;
@@ -22,17 +22,17 @@ contract PandaswapFacotryTest is Test, TestUtils {
         address poolAddress = factory.createPool(
             address(weth),
             address(usdc),
-            10
+            500
         );
         PandaswapPool pool = PandaswapPool(poolAddress);
         //verify poolAddress state is updated
         assertEq(
-            factory.pools(address(weth), address(usdc), 10),
+            factory.pools(address(weth), address(usdc), 500),
             poolAddress,
             "invalid pool address in the registry"
         );
         assertEq(
-            factory.pools(address(usdc), address(weth), 10),
+            factory.pools(address(usdc), address(weth), 500),
             poolAddress,
             "invalid pool address in the registry(reverse order)"
         );
@@ -43,7 +43,7 @@ contract PandaswapFacotryTest is Test, TestUtils {
         assertEq(pool.token1(), address(usdc), "invalid token1 address");
         assertEq(pool.tickSpacing(), 10, "invalid tick spacing");
         //verify pool contract stores correct sqrtPrice and tick
-        (uint160 sqrtPriceX96, int24 tick) = pool.slot0();
+        (uint160 sqrtPriceX96, int24 tick, , , ) = pool.slot0();
         assertEq(sqrtPriceX96, 0, "invalid sqrtPriceX96");
         assertEq(tick, 0, "invalid current tick");
     }
@@ -51,17 +51,17 @@ contract PandaswapFacotryTest is Test, TestUtils {
     //Failure case
     function testCreatePoolIdenticalTokens() public {
         vm.expectRevert(encodeError("TokensMustBeDifferent()"));
-        factory.createPool(address(weth), address(weth), 10);
+        factory.createPool(address(weth), address(weth), 500);
     }
 
     function testCreateZeroTokenAddress() public {
         vm.expectRevert(encodeError("ZeroAddressNotAllowed()"));
-        factory.createPool(address(weth), address(0), 10);
+        factory.createPool(address(weth), address(0), 500);
     }
 
     function testCreateAlreadyExists() public {
-        factory.createPool(address(weth), address(usdc), 10);
+        factory.createPool(address(weth), address(usdc), 500);
         vm.expectRevert(encodeError("PoolAlreadyExists()"));
-        factory.createPool(address(weth), address(usdc), 10);
+        factory.createPool(address(weth), address(usdc), 500);
     }
 }

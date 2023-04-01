@@ -6,7 +6,8 @@ import "./interfaces/IPandaswapPoolDeployer.sol";
 import "./PandaswapPool.sol";
 
 contract PandaswapFactory is IPandaswapPoolDeployer {
-    mapping(uint24 => bool) public tickSpacings;
+    mapping(uint24 => uint24) public fees;
+
     mapping(address => mapping(address => mapping(uint24 => address)))
         public pools;
     PoolParameters public parameters;
@@ -18,43 +19,44 @@ contract PandaswapFactory is IPandaswapPoolDeployer {
     );
 
     error TokensMustBeDifferent();
-    error UnsupportedTickSpacing();
+    error UnsupportedFee();
     error ZeroAddressNotAllowed();
     error PoolAlreadyExists();
 
     constructor() {
-        tickSpacings[10] = true;
-        tickSpacings[60] = true;
+        fees[500] = 10;
+        fees[3000] = 60;
     }
 
     function createPool(
         address tokenX,
         address tokenY,
-        uint24 tickSpacing
+        uint24 fee
     ) public returns (address pool) {
         if (tokenX == tokenY) revert TokensMustBeDifferent();
-        if (!tickSpacings[tickSpacing]) revert UnsupportedTickSpacing();
+        if (fees[fee] == 0) revert UnsupportedFee();
         (tokenX, tokenY) = tokenX < tokenY
             ? (tokenX, tokenY)
             : (tokenY, tokenX);
         if (tokenX == address(0) || tokenY == address(0))
             revert ZeroAddressNotAllowed();
-        if (pools[tokenX][tokenY][tickSpacing] != address(0))
+        if (pools[tokenX][tokenY][fee] != address(0))
             revert PoolAlreadyExists();
         parameters = PoolParameters({
             factory: address(this),
             token0: tokenX,
             token1: tokenY,
-            tickSpacing: tickSpacing
+            tickSpacing: fees[fee],
+            fee: fee
         });
         pool = address(
             new PandaswapPool{
-                salt: keccak256(abi.encodePacked(tokenX, tokenY, tickSpacing))
+                salt: keccak256(abi.encodePacked(tokenX, tokenY, fee))
             }()
         );
         delete parameters;
-        pools[tokenX][tokenY][tickSpacing] = pool;
-        pools[tokenY][tokenX][tickSpacing] = pool;
-        emit PoolCreated(tokenX, tokenY, tickSpacing, pool);
+        pools[tokenX][tokenY][fee] = pool;
+        pools[tokenY][tokenX][fee] = pool;
+        emit PoolCreated(tokenX, tokenY, fee, pool);
     }
 }

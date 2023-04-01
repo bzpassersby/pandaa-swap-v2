@@ -6,6 +6,7 @@ import "forge-std/Test.sol";
 import "./ERC20Mintable.sol";
 import "./TestUtils.sol";
 import "./PandaswapPool.Utils.sol";
+import "../src/PandaswapFactory.sol";
 import "../src/interfaces/IPandaswapManager.sol";
 import "../src/interfaces/IPandaswapPoolDeployer.sol";
 
@@ -18,6 +19,7 @@ contract PandaswapPoolTest is
     ERC20Mintable token0;
     ERC20Mintable token1;
     PandaswapPool pool;
+    PandaswapFactory factory;
     PoolParameters public parameters;
 
     bool transferInMintCallback = true;
@@ -25,8 +27,9 @@ contract PandaswapPoolTest is
 
     function setUp() public {
         console.log("deploying...");
-        token0 = new ERC20Mintable("Wrapped Ether", "WETH", 18);
-        token1 = new ERC20Mintable("USDC", "USDC", 18);
+        token1 = new ERC20Mintable("Wrapped Ether", "WETH", 18);
+        token0 = new ERC20Mintable("USDC", "USDC", 18);
+        factory = new PandaswapFactory();
         console.log(address(token0), address(token1));
     }
 
@@ -35,11 +38,12 @@ contract PandaswapPoolTest is
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 1,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         pool.initialize(sqrtP(5000));
-        (uint160 sqrtPriceX96, int24 tick) = pool.slot0();
+        (uint160 sqrtPriceX96, int24 tick, , , ) = pool.slot0();
         assertEq(
             sqrtPriceX96,
             5602277097478613991869082763264,
@@ -82,7 +86,7 @@ contract PandaswapPoolTest is
 
     function testMintRangeBelow() public {
         LiquidityRange[] memory liquidity = new LiquidityRange[](1);
-        liquidity[0] = liquidityRange(4000, 4999, 1 ether, 5000 ether, 5000);
+        liquidity[0] = liquidityRange(4000, 4996, 1 ether, 5000 ether, 5000);
         TestCaseParams memory params = TestCaseParams({
             wethBalance: 1 ether,
             usdcBalance: 5000 ether,
@@ -175,8 +179,8 @@ contract PandaswapPoolTest is
                 token1: token1,
                 amount0: poolBalance0,
                 amount1: poolBalance1,
-                lowerTick: tick(4545),
-                upperTick: tick(5500),
+                lowerTick: tick60(4545),
+                upperTick: tick60(5500),
                 positionLiquidity: liquidity[0].amount,
                 currentLiquidity: liquidity[0].amount + liquidity[1].amount,
                 sqrtPriceX96: sqrtP(5000),
@@ -190,8 +194,8 @@ contract PandaswapPoolTest is
                 token1: token1,
                 amount0: poolBalance0,
                 amount1: poolBalance1,
-                lowerTick: tick(4000),
-                upperTick: tick(6250),
+                lowerTick: tick60(4000),
+                upperTick: tick60(6250),
                 positionLiquidity: liquidity[1].amount,
                 currentLiquidity: liquidity[0].amount + liquidity[1].amount,
                 sqrtPriceX96: sqrtP(5000),
@@ -205,9 +209,10 @@ contract PandaswapPoolTest is
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 60,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         vm.expectRevert(encodeError("InvalidTickRange()"));
         pool.mint(address(this), -887273, 0, 0, "");
     }
@@ -217,9 +222,10 @@ contract PandaswapPoolTest is
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 60,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         vm.expectRevert(encodeError("InvalidTickRange()"));
         pool.mint(address(this), 887273, 0, 0, "");
     }
@@ -229,9 +235,10 @@ contract PandaswapPoolTest is
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 60,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         vm.expectRevert(encodeError("ZeroLiquidity()"));
         pool.mint(address(this), 0, 1, 0, "");
     }
@@ -243,9 +250,10 @@ contract PandaswapPoolTest is
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 60,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         vm.expectRevert();
         pool.mint(
             address(this),
@@ -284,15 +292,16 @@ contract PandaswapPoolTest is
     function setupTestCase(
         TestCaseParams memory params
     ) internal returns (uint256 poolBalance0, uint256 poolBalance1) {
-        token0.mint(address(this), params.wethBalance + 1 ether);
-        token1.mint(address(this), params.usdcBalance + 1 ether);
+        token0.mint(address(this), params.wethBalance + 5 ether);
+        token1.mint(address(this), params.usdcBalance + 5 ether);
         parameters = PoolParameters({
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 60,
+            fee: 3000
         });
-        pool = new PandaswapPool();
+        pool = PandaswapPool(deployPool(parameters));
         pool.initialize(sqrtP(5000));
         //set up callback params
         IPandaswapManager.CallbackData memory extra = IPandaswapManager
@@ -308,8 +317,8 @@ contract PandaswapPoolTest is
 
         if (params.mintLiquidity) {
             console.log("minting position...");
-            token0.approve(address(this), params.wethBalance + 1 ether);
-            token1.approve(address(this), params.usdcBalance + 1 ether);
+            token0.approve(address(this), params.wethBalance + 5 ether);
+            token1.approve(address(this), params.usdcBalance + 5 ether);
             for (uint256 i = 0; i < params.liquidity.length; i++) {
                 (poolBalance0Tmp, poolBalance1Tmp) = pool.mint(
                     address(this),
@@ -327,6 +336,12 @@ contract PandaswapPoolTest is
     // //---------------------------------------------------------------------------
     // //============================== CALLBACK ===================================
 
+    function deployPool(
+        PoolParameters memory params
+    ) internal returns (address _pool) {
+        _pool = factory.createPool(params.token0, params.token1, params.fee);
+    }
+
     function pandaswapMintCallback(
         uint256 amount0,
         uint256 amount1,
@@ -343,13 +358,17 @@ contract PandaswapPoolTest is
         console.log(amount0, amount1);
     }
 
-    function pandaswapFlashCallback(bytes calldata data) public {
+    function pandaswapFlashCallback(
+        uint256 fee0,
+        uint256 fee1,
+        bytes calldata data
+    ) public {
         (uint256 amount0, uint256 amount1) = abi.decode(
             data,
             (uint256, uint256)
         );
-        if (amount0 > 0) token0.transfer(msg.sender, amount0);
-        if (amount1 > 0) token1.transfer(msg.sender, amount1);
+        if (amount0 > 0) token0.transfer(msg.sender, amount0 + fee0);
+        if (amount1 > 0) token1.transfer(msg.sender, amount1 + fee1);
         flashCallbackCalled = true;
     }
 }

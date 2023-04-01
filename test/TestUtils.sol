@@ -70,8 +70,11 @@ abstract contract TestUtils is Test {
 
     function tickInBitMap(
         PandaswapPool pool,
-        int24 _tick
+        int24 _tick,
+        int24 _tickSpacing
     ) internal view returns (bool initialized) {
+        require(_tick % _tickSpacing == 0, "Tick is not evenly spaced!");
+        _tick = _tick / _tickSpacing;
         int16 wordPos = int16(_tick >> 8);
         uint8 bitPos = uint8(uint24(_tick % 256));
         uint256 word = pool.tickBitmap(wordPos);
@@ -98,7 +101,7 @@ abstract contract TestUtils is Test {
                 expected.upperTick
             )
         );
-        uint128 posLiquidity = expected.pool.positions(positionKey);
+        (uint128 posLiquidity, , , , ) = expected.pool.positions(positionKey);
         assertEq(
             posLiquidity,
             expected.positionLiquidity,
@@ -108,7 +111,9 @@ abstract contract TestUtils is Test {
         (
             bool tickInitialized,
             uint128 tickLiquidityGross,
-            int128 tickLiquidityNet
+            int128 tickLiquidityNet,
+            ,
+
         ) = expected.pool.ticks(expected.lowerTick);
         assertTrue(tickInitialized);
         assertEq(
@@ -122,10 +127,10 @@ abstract contract TestUtils is Test {
             "incorrect lower tick net liquidity"
         );
         // check tick bitmap status of lower and upper tick
-        assertTrue(tickInBitMap(expected.pool, expected.lowerTick));
-        assertTrue(tickInBitMap(expected.pool, expected.upperTick));
+        assertTrue(tickInBitMap(expected.pool, expected.lowerTick, 60));
+        assertTrue(tickInBitMap(expected.pool, expected.upperTick, 60));
         // check current price and tick didn't change in pool
-        (uint160 sqrtPriceX96, int24 currentTick) = expected.pool.slot0();
+        (uint160 sqrtPriceX96, int24 currentTick, , , ) = expected.pool.slot0();
         assertEq(sqrtPriceX96, expected.sqrtPriceX96, "invalid current sqrtP");
         assertEq(currentTick, expected.tick, "invalid current tick");
         // check current liquidity in pool is updated
@@ -157,7 +162,7 @@ abstract contract TestUtils is Test {
             uint256(expected.poolBalance1),
             "invalid pool USDC balance"
         );
-        (uint160 sqrtPriceX96, int24 currentTick) = expected.pool.slot0();
+        (uint160 sqrtPriceX96, int24 currentTick, , , ) = expected.pool.slot0();
         assertEq(sqrtPriceX96, expected.sqrtPriceX96, "invalid current sqrtP");
         assertEq(currentTick, expected.tick, "invalid current tick");
         assertEq(
@@ -211,7 +216,7 @@ abstract contract TestUtils is Test {
         params = PandaswapManager.MintParams({
             tokenA: tokenA,
             tokenB: tokenB,
-            tickSpacing: 60,
+            fee: 3000,
             lowerTick: tick60(lowerPrice),
             upperTick: tick60(upperPrice),
             amount0Desired: amount0,

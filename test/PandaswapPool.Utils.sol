@@ -30,12 +30,12 @@ abstract contract PandaswapPoolUtils is TestUtils {
         uint256 currentPrice
     ) internal pure returns (LiquidityRange memory range) {
         range = LiquidityRange({
-            lowerTick: tick(lowerPrice),
-            upperTick: tick(upperPrice),
+            lowerTick: tick60(lowerPrice),
+            upperTick: tick60(upperPrice),
             amount: LiquidityMath.getLiquidityForAmounts(
                 sqrtP(currentPrice),
-                sqrtP(lowerPrice),
-                sqrtP(upperPrice),
+                sqrtP60FromTick(tick60(lowerPrice)),
+                sqrtP60FromTick(tick60(upperPrice)),
                 amount0,
                 amount1
             )
@@ -48,8 +48,8 @@ abstract contract PandaswapPoolUtils is TestUtils {
         uint128 _amount
     ) internal pure returns (LiquidityRange memory range) {
         range = LiquidityRange({
-            lowerTick: tick(lowerPrice),
-            upperTick: tick(upperPrice),
+            lowerTick: tick60(lowerPrice),
+            upperTick: tick60(upperPrice),
             amount: _amount
         });
     }

@@ -24,7 +24,8 @@ contract DeployDevelopment is Script, IPandaswapPoolDeployer {
             factory: address(this),
             token0: address(token0),
             token1: address(token1),
-            tickSpacing: 1
+            tickSpacing: 1,
+            fee: 30000
         });
         PandaswapPool pool = new PandaswapPool();
         PandaswapManager manager = new PandaswapManager(address(this));

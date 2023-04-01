@@ -112,7 +112,7 @@ contract PandaswapQuoter is Test {
         uint256 amountOut = amount0Delta > 0
             ? uint256(-amount1Delta)
             : uint256(-amount0Delta);
-        (uint160 sqrtPriceX96After, int24 tickAfter) = PandaswapPool(pool)
+        (uint160 sqrtPriceX96After, int24 tickAfter, , , ) = PandaswapPool(pool)
             .slot0();
 
         assembly {

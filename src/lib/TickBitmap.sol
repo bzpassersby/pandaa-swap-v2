@@ -3,11 +3,9 @@ pragma solidity >=0.5.0;
 import "./BitMath.sol";
 
 library TickBitmap {
-    function position(int24 tick)
-        private
-        pure
-        returns (int16 wordPos, uint8 bitPos)
-    {
+    function position(
+        int24 tick
+    ) private pure returns (int16 wordPos, uint8 bitPos) {
         wordPos = int16(tick >> 8);
         bitPos = uint8(uint24(tick % 256));
     }
@@ -17,7 +15,7 @@ library TickBitmap {
         int24 tick,
         int24 tickSpacing
     ) internal {
-        require(tick % tickSpacing == 0,"Tick is not evenly spaced!"); //ensure tick is spaced
+        require(tick % tickSpacing == 0, "Tick is not evenly spaced!"); //ensure tick is spaced
         (int16 wordPos, uint8 bitPos) = position(tick / tickSpacing);
         uint256 mask = 1 << bitPos;
         self[wordPos] ^= mask;
@@ -49,7 +47,9 @@ library TickBitmap {
             next = initialized
                 ? (compressed +
                     1 +
-                    int24(uint24(BitMath.leastSignificantBit(masked) - bitPos)))
+                    int24(
+                        uint24(BitMath.leastSignificantBit(masked) - bitPos)
+                    )) * tickSpacing
                 : (compressed + 1 + int24(uint24((type(uint8).max - bitPos)))) *
                     tickSpacing;
         }

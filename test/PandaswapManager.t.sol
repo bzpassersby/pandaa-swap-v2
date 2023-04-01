@@ -137,7 +137,7 @@ contract PandaswapManagerTest is Test, TestUtils {
             PandaswapManager.SwapSingleParams({
                 tokenIn: address(usdc),
                 tokenOut: address(weth),
-                tickSpacing: 60,
+                fee: 3000,
                 amountIn: swapAmount,
                 sqrtPriceLimitX96: sqrtP(5004)
             })
@@ -151,7 +151,7 @@ contract PandaswapManagerTest is Test, TestUtils {
                 userBalance1: userBalance1Before - swapAmount,
                 poolBalance0: poolBalance0 - amountOut,
                 poolBalance1: poolBalance1 + swapAmount,
-                sqrtPriceX96: 5604429046402228950611610935846,
+                sqrtPriceX96: 5604422590555458105735383351329,
                 tick: 85183,
                 currentLiquidity: liquidity60(mints[0], 5000)
             })
@@ -183,7 +183,7 @@ contract PandaswapManagerTest is Test, TestUtils {
             PandaswapManager.SwapSingleParams({
                 tokenIn: address(weth),
                 tokenOut: address(usdc),
-                tickSpacing: 60,
+                fee: 3000,
                 amountIn: swapAmount,
                 sqrtPriceLimitX96: sqrtP(4993)
             })
@@ -197,8 +197,8 @@ contract PandaswapManagerTest is Test, TestUtils {
                 userBalance1: userBalance1Before + amountOut,
                 poolBalance0: poolBalance0 + swapAmount,
                 poolBalance1: poolBalance1 - amountOut,
-                sqrtPriceX96: 5598854004958668990019104567840,
-                tick: 85163,
+                sqrtPriceX96: 5598864267980327381293641469695,
+                tick: 85164,
                 currentLiquidity: liquidity60(mints[0], 5000)
             })
         );
@@ -226,7 +226,7 @@ contract PandaswapManagerTest is Test, TestUtils {
         address poolAddress = factory.createPool(
             address(weth),
             address(panda),
-            60
+            3000
         );
         PandaswapPool pandaPool = PandaswapPool(poolAddress);
         pandaPool.initialize(sqrtP(10));
@@ -244,12 +244,12 @@ contract PandaswapManagerTest is Test, TestUtils {
         uint256 swapAmount = 2.5 ether;
         panda.mint(address(this), swapAmount);
         panda.approve(address(manager), swapAmount);
-        //Create Swap Path: panda-60->Weth-60->Usdc
+        //Create Swap Path: panda-3000->Weth-3000->Usdc
         bytes memory path = bytes.concat(
             bytes20(address(panda)),
-            bytes3(uint24(60)),
+            bytes3(uint24(3000)),
             bytes20(address(weth)),
-            bytes3(uint24(60)),
+            bytes3(uint24(3000)),
             bytes20(address(usdc))
         );
         console.log("swapping path:");
@@ -278,10 +278,10 @@ contract PandaswapManagerTest is Test, TestUtils {
                 token1: usdc,
                 userBalance0: userBalance0Before,
                 userBalance1: userBalance1Before + amountOut,
-                poolBalance0: poolBalance0 + 0.248978073953125685 ether,
+                poolBalance0: poolBalance0 + 0.248234183855004780 ether,
                 poolBalance1: poolBalance1 - amountOut,
-                sqrtPriceX96: 5539210836162906471414991525125,
-                tick: 84949,
+                sqrtPriceX96: 5539583677789714904047360872750,
+                tick: 84951,
                 currentLiquidity: 1546311247949719370887
             })
         );
@@ -292,9 +292,9 @@ contract PandaswapManagerTest is Test, TestUtils {
                 token1: panda,
                 userBalance0: userBalance0Before,
                 userBalance1: userBalance2Before - swapAmount,
-                poolBalance0: poolBalance2 - 0.248978073953125685 ether,
+                poolBalance0: poolBalance2 - 0.248234183855004780 ether,
                 poolBalance1: poolBalance3 + swapAmount,
-                sqrtPriceX96: 251569791264246604334106847322,
+                sqrtPriceX96: 251566706235579008314845847774,
                 tick: 23108,
                 currentLiquidity: 192611247052046431504
             })
@@ -343,7 +343,7 @@ contract PandaswapManagerTest is Test, TestUtils {
         address poolAddress = factory.createPool(
             address(weth),
             address(usdc),
-            60
+            3000
         );
         pool = PandaswapPool(poolAddress);
         pool.initialize(sqrtP(params.currentPrice));
